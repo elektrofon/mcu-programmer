@@ -1,0 +1,224 @@
+name: 'Create Image'
+
+on:
+  workflow_dispatch:
+  # push:
+  #   tags:
+  #     - "v*.*.*"
+
+jobs:
+  create_image:
+    name: Create Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Install QEMU
+        run: |
+          sudo apt update
+          sudo apt install -y qemu-user-static binfmt-support
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Checkout pi-gen
+        uses: actions/checkout@v4
+        with:
+          repository: RPI-Distro/pi-gen
+          ref: arm64
+          path: pi-gen
+
+      - name: Setup pi-gen
+        run: |
+          mkdir -p pi-gen/mcuprogrammer/00-mcuprogrammer/files
+
+          cat <<'EOS' >> pi-gen/mcuprogrammer/prerun.sh
+          #!/bin/bash -e
+
+          if [ ! -d "${ROOTFS_DIR}" ]; then
+          	copy_previous
+          fi
+          EOS
+
+          chmod +x pi-gen/mcuprogrammer/prerun.sh
+
+          cat <<'EOS' >> pi-gen/mcuprogrammer/EXPORT_IMAGE
+          IMG_SUFFIX=""
+          if [ "${USE_QEMU}" = "1" ]; then
+              export IMG_SUFFIX="${IMG_SUFFIX}-qemu"
+          fi
+          EOS
+
+          cat <<'EOS' >> pi-gen/mcuprogrammer/00-mcuprogrammer/00-packages
+          build-essential
+          libtool
+          libusb-1.0-0-dev
+          git
+          netcat-openbsd
+          tk-dev
+          xserver-xorg
+          xinit
+          x11-xserver-utils
+          EOS
+
+          cat <<'EOS' >> pi-gen/mcuprogrammer/00-mcuprogrammer/01-run.sh
+          #!/bin/bash -e
+
+          # Enable serial port and disable bluetooth
+          on_chroot << EOF
+          SUDO_USER="${FIRST_USER_NAME}" echo 'dtparam=uart0' >> /boot/firmware/config.txt
+          SUDO_USER="${FIRST_USER_NAME}" echo 'enable_uart=1' >> /boot/firmware/config.txt
+          SUDO_USER="${FIRST_USER_NAME}" echo 'dtoverlay=disable-bt' >> /boot/firmware/config.txt
+          SUDO_USER="${FIRST_USER_NAME}" echo 'dtoverlay=miniuart-bt' >> /boot/firmware/config.txt
+          SUDO_USER="${FIRST_USER_NAME}" systemctl disable hciuart
+          SUDO_USER="${FIRST_USER_NAME}" systemctl disable bluetooth
+          SUDO_USER="${FIRST_USER_NAME}" systemctl stop hciuart
+          SUDO_USER="${FIRST_USER_NAME}" systemctl stop bluetooth
+          SUDO_USER="${FIRST_USER_NAME}" systemctl mask serial-getty@ttyAMA0.service
+          SUDO_USER="${FIRST_USER_NAME}" sed -i /boot/firmware/cmdline.txt -e 's/console=ttyAMA0,[0-9]\+ //'
+          SUDO_USER="${FIRST_USER_NAME}" sed -i /boot/firmware/cmdline.txt -e 's/console=serial0,[0-9]\+ //'
+          EOF
+
+          # Build OpenOCD
+          on_chroot << EOF
+          cd "/home/${FIRST_USER_NAME}"
+          git clone --depth=1 http://git.code.sf.net/p/openocd/code openocd
+          cd openocd
+          ./bootstrap
+          ./configure --enable-stlink --enable-sysfsgpio --enable-bcm2835gpio
+          make
+          SUDO_USER="${FIRST_USER_NAME}" make install
+          EOF
+
+          # Cleanup
+          on_chroot << EOF
+          SUDO_USER="${FIRST_USER_NAME}" apt remove --purge -y build-essential git libtool
+          SUDO_USER="${FIRST_USER_NAME}" apt autoremove -y
+          SUDO_USER="${FIRST_USER_NAME}" apt-get clean
+          SUDO_USER="${FIRST_USER_NAME}" rm -rf /var/lib/apt/lists/*
+          SUDO_USER="${FIRST_USER_NAME}" rm -rf /root/.cache
+          SUDO_USER="${FIRST_USER_NAME}" rm -rf /root/.cargo
+          SUDO_USER="${FIRST_USER_NAME}" rm -rf "/home/${FIRST_USER_NAME}/openocd"
+          EOF
+
+          # Create OpenOCD config
+          on_chroot << EOF
+          cat <<EOC > "/home/${FIRST_USER_NAME}/openocd.cfg"
+          # OpenOCD interface on RPi v3+
+
+          # Use RPi GPIO pins
+          adapter driver bcm2835gpio
+
+          # Base address of I/O port
+          bcm2835gpio peripheral_base 0x3F000000
+
+          # Clock scaling
+          bcm2835gpio speed_coeffs 146203 36
+
+          # SWD
+          adapter gpio swclk 25
+          adapter gpio swdio 24
+
+          bindto 0.0.0.0
+          EOC
+          EOF
+
+          # Create OpenOCD service
+          on_chroot << EOF
+          cat <<EOC > "/etc/systemd/system/openocd.service"
+          [Unit]
+          Description=OpenOCD service
+
+          [Service]
+          Type=simple
+          ExecStart=openocd -f "/home/${FIRST_USER_NAME}/openocd.cfg" -c "transport select swd" -f target/stm32g0x.cfg
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOC
+          EOF
+
+          # Create debug service
+          on_chroot << EOF
+          cat <<EOC > "/etc/systemd/system/debug.service"
+          [Unit]
+          Description=Serial debug service
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/bin/bash -c 'stty -F /dev/ttyAMA0 230400 raw -echo -echoe -echok && nc -l 1337 </dev/ttyAMA0 >/dev/ttyAMA0'
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOC
+          EOF
+
+          # Enable services
+          on_chroot << EOF
+          SUDO_USER="${FIRST_USER_NAME}" systemctl enable openocd
+          SUDO_USER="${FIRST_USER_NAME}" systemctl enable debug
+          EOF
+
+          # Fix bug with AVAHI IPv6 causing issues (might be an Apple problem though) TODO: Look into this later
+          on_chroot << EOF
+          cat <<EOC > "/etc/avahi/avahi-daemon.conf"
+          [server]
+          use-ipv4=yes
+          use-ipv6=no
+          ratelimit-interval-usec=1000000
+          ratelimit-burst=1000
+
+          [wide-area]
+          enable-wide-area=yes
+
+          [publish]
+          publish-hinfo=no
+          publish-workstation=no
+          publish-aaaa-on-ipv4=no
+          EOC
+          EOF
+          EOS
+
+          chmod +x pi-gen/mcuprogrammer/00-mcuprogrammer/01-run.sh
+
+          cat <<'EOF' >> pi-gen/config
+          IMG_NAME="MCUProgrammer"
+          RELEASE="bookworm"
+          TARGET_HOSTNAME="mcuprogrammer"
+          KEYBOARD_KEYMAP="us"
+          KEYBOARD_LAYOUT="English (US)"
+          TIMEZONE_DEFAULT="Europe/Oslo"
+          FIRST_USER_NAME="superlative"
+          FIRST_USER_PASS="superlative"
+          DISABLE_FIRST_BOOT_USER_RENAME=1
+          WPA_COUNTRY="NO"
+          ENABLE_SSH=1
+          STAGE_LIST="stage0 stage1 stage2 mcuprogrammer"
+          EOF
+
+          touch pi-gen/stage2/SKIP_IMAGES
+
+      - name: Build
+        run: |
+          cd pi-gen
+          ./build-docker.sh
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: deploy
+          path: pi-gen/deploy
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: ${{ !env.ACT && (startsWith(github.ref, 'refs/tags/')) }}
+        with:
+          files: |
+            pi-gen/deploy/*.zip
