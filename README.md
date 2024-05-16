@@ -75,7 +75,7 @@ nc mcuprogrammer.local 1337
 ### Prerequisites
 
 - Raspberry PI 3/4/5/Zero 2 W
-- [Latest SB01Programmer image](https://github.com/elektrofon/mcu-programmer/releases/latest) (no need to unzip)
+- [Latest MCU Programmer image](https://github.com/elektrofon/mcu-programmer/releases/latest) (no need to unzip)
 - [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 
 ### Flash SD card
