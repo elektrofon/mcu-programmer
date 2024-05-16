@@ -23,6 +23,28 @@ Compatible Raspberry Pi models:
 
 ## Usage
 
+### Configure target device
+
+The target MCU can be set through a telnet service running on port `8888`.  
+Connect to the service and select the target device:
+
+```bash
+telnet mcuprogrammer.local 8888
+```
+
+```
+Trying mcuprogrammer.local...
+Connected to mcuprogrammer.local.
+Escape character is '^]'.
+Connected to MCU Programmer CLI. Type 'help' for a list of commands
+```
+
+```bash
+target rp2040
+```
+
+MCU Programmer supports every target supported by the latest build of OpenOCD.
+
 ### Program from remote:
 
 ```bash
@@ -71,7 +93,9 @@ nc mcuprogrammer.local 1337
 
 Build script can be found in `.github/workflows/main.yml`
 
-### Setup build environment - macOS
+### Setup build environment
+
+#### MacOS
 
 Install [act](https://github.com/nektos/act) and [gh](https://cli.github.com/):
 
@@ -79,7 +103,7 @@ Install [act](https://github.com/nektos/act) and [gh](https://cli.github.com/):
 brew install gh act
 ```
 
-### Setup build environment - Linux (Debian/Ubuntu)
+#### Linux (Debian/Ubuntu)
 
 Install Docker:
 
@@ -108,7 +132,7 @@ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo 
 
 ### Building Raspberry PI image
 
-Sign in to git to get access token:
+Sign in to git to get access token (this only has to be done once):
 
 ```bash
 gh auth login

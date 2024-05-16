@@ -81,6 +81,15 @@ jobs:
           SUDO_USER="${FIRST_USER_NAME}" sed -i /boot/firmware/cmdline.txt -e 's/console=serial0,[0-9]\+ //'
           EOF
 
+          # Build CLI
+          on_chroot << EOF
+          cd "/home/${FIRST_USER_NAME}"
+          git clone --depth=1 https://github.com/elektrofon/mcu-programmer-cli.git cli
+          cd cli
+          make
+          SUDO_USER="${FIRST_USER_NAME}" make install
+          EOF
+
           # Build OpenOCD
           on_chroot << EOF
           cd "/home/${FIRST_USER_NAME}"
@@ -100,12 +109,14 @@ jobs:
           SUDO_USER="${FIRST_USER_NAME}" rm -rf /var/lib/apt/lists/*
           SUDO_USER="${FIRST_USER_NAME}" rm -rf /root/.cache
           SUDO_USER="${FIRST_USER_NAME}" rm -rf /root/.cargo
+          SUDO_USER="${FIRST_USER_NAME}" rm -rf "/home/${FIRST_USER_NAME}/cli"
           SUDO_USER="${FIRST_USER_NAME}" rm -rf "/home/${FIRST_USER_NAME}/openocd"
           EOF
 
           # Create OpenOCD config
           on_chroot << EOF
-          cat <<EOC > "/home/${FIRST_USER_NAME}/openocd.cfg"
+          mkdir -p "/opt/mcuprogrammer"
+          cat <<EOC > "/opt/mcuprogrammer/openocd.cfg"
           # OpenOCD interface on RPi v3+
 
           # Use RPi GPIO pins
@@ -125,6 +136,14 @@ jobs:
           EOC
           EOF
 
+          # Create config environment file
+          mkdir -p "/opt/mcuprogrammer"
+          on_chroot << EOF
+          cat <<EOC > "/opt/mcuprogrammer/config.env"
+          TARGET=rp2040
+          EOC
+          EOF
+
           # Create OpenOCD service
           on_chroot << EOF
           cat <<EOC > "/etc/systemd/system/openocd.service"
@@ -133,7 +152,8 @@ jobs:
 
           [Service]
           Type=simple
-          ExecStart=openocd -f "/home/${FIRST_USER_NAME}/openocd.cfg" -c "transport select swd" -f target/stm32g0x.cfg
+          EnvironmentFile=/opt/mcuprogrammer/config.env
+          ExecStart=openocd -f "/opt/mcuprogrammer/openocd.cfg" -c "transport select swd" -f "target/\${TARGET}.cfg"
           Restart=always
           RestartSec=5
 
@@ -160,10 +180,28 @@ jobs:
           EOC
           EOF
 
+          # Create CLI service
+          on_chroot << EOF
+          cat <<EOC > "/etc/systemd/system/cli.service"
+          [Unit]
+          Description=CLI service
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/cli
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          EOC
+          EOF
+
           # Enable services
           on_chroot << EOF
           SUDO_USER="${FIRST_USER_NAME}" systemctl enable openocd
           SUDO_USER="${FIRST_USER_NAME}" systemctl enable debug
+          SUDO_USER="${FIRST_USER_NAME}" systemctl enable cli
           EOF
 
           # Fix bug with AVAHI IPv6 causing issues (might be an Apple problem though) TODO: Look into this later
@@ -195,8 +233,8 @@ jobs:
           KEYBOARD_KEYMAP="us"
           KEYBOARD_LAYOUT="English (US)"
           TIMEZONE_DEFAULT="Europe/Oslo"
-          FIRST_USER_NAME="superlative"
-          FIRST_USER_PASS="superlative"
+          FIRST_USER_NAME="mcuprogrammer"
+          FIRST_USER_PASS="mcuprogrammer"
           DISABLE_FIRST_BOOT_USER_RENAME=1
           WPA_COUNTRY="NO"
           ENABLE_SSH=1
