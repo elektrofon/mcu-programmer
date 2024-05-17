@@ -23,10 +23,26 @@ Compatible Raspberry Pi models:
 
 ## Usage
 
-### Configure target device
+### Program from remote:
 
-The target MCU can be set through a telnet service running on port `8888`.  
-Connect to the service and select the target device:
+```bash
+arm-none-eabi-gdb -ex="target remote mcuprogrammer.local:3333" my-firmware.elf -ex "load" -ex "monitor reset" -ex "det" -ex "q"
+```
+
+### Serial debug
+
+MCU Programmer exposes a network service at port `1337` which echoes all serial messages received on `UART RX`.
+
+You can connect to this service from a remote machine using `netcat`:
+
+```bash
+nc mcuprogrammer.local 1337
+```
+
+## Configuration
+
+MCU Programmer can be configured through a telnet service running on port `8888`.  
+Connect to the service:
 
 ```bash
 telnet mcuprogrammer.local 8888
@@ -39,34 +55,18 @@ Escape character is '^]'.
 Connected to MCU Programmer CLI. Type 'help' for a list of commands
 ```
 
+**Target device can be set with the `target` command:**
+
 ```bash
 target rp2040
 ```
 
-MCU Programmer supports every target supported by the latest build of OpenOCD.
+*MCU Programmer supports every target supported by the latest build of OpenOCD.*
 
-### Program from remote:
-
-```bash
-arm-none-eabi-gdb -ex="target remote mcuprogrammer.local:3333" my-firmware.elf -ex "load" -ex "monitor reset" -ex "det" -ex "q"
-```
-
-Use `continue` command to run program.  
-Press `<ctrl+c>` to exit debug session.  
-Reset device through the GDB `monitor` interface:
-
-```gdb
-(gdb) monitor reset
-```
-
-### Serial debug
-
-MCU Programmer exposes a network service at port `1337` which echoes all serial messages received on `UART RX`.
-
-You can connect to this service from a remote machine using `netcat`:
+**The baud rate for serial debugging can be set with the `baudrate` command:**
 
 ```bash
-nc mcuprogrammer.local 1337
+baudrate 115200
 ```
 
 

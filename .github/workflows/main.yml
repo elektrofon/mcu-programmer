@@ -141,6 +141,7 @@ jobs:
           on_chroot <<EOF
           cat <<EOC > "/opt/mcuprogrammer/config.env"
           TARGET=rp2040
+          BAUDRATE=115200
           EOC
           EOF
 
@@ -163,15 +164,16 @@ jobs:
           EOF
 
           # Create debug service
-          on_chroot <<EOF
-          cat <<EOC > "/etc/systemd/system/debug.service"
+          on_chroot <<'EOF'
+          cat <<'EOC' > "/etc/systemd/system/debug.service"
           [Unit]
           Description=Serial debug service
           After=network.target
 
           [Service]
           Type=simple
-          ExecStart=/bin/bash -c 'stty -F /dev/ttyAMA0 230400 raw -echo -echoe -echok && nc -l 1337 </dev/ttyAMA0 >/dev/ttyAMA0'
+          EnvironmentFile=/opt/mcuprogrammer/config.env
+          ExecStart=/bin/bash -c 'stty -F /dev/ttyAMA0 ${BAUDRATE} raw -echo -echoe -echok && nc -l 1337 </dev/ttyAMA0 >/dev/ttyAMA0'
           Restart=always
           RestartSec=5
 
