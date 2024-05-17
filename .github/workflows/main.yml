@@ -67,7 +67,7 @@ jobs:
           #!/bin/bash -e
 
           # Enable serial port and disable bluetooth
-          on_chroot << EOF
+          on_chroot <<EOF
           SUDO_USER="${FIRST_USER_NAME}" echo 'dtparam=uart0' >> /boot/firmware/config.txt
           SUDO_USER="${FIRST_USER_NAME}" echo 'enable_uart=1' >> /boot/firmware/config.txt
           SUDO_USER="${FIRST_USER_NAME}" echo 'dtoverlay=disable-bt' >> /boot/firmware/config.txt
@@ -82,7 +82,7 @@ jobs:
           EOF
 
           # Build CLI
-          on_chroot << EOF
+          on_chroot <<EOF
           cd "/home/${FIRST_USER_NAME}"
           git clone --depth=1 https://github.com/elektrofon/mcu-programmer-cli.git cli
           cd cli
@@ -91,7 +91,7 @@ jobs:
           EOF
 
           # Build OpenOCD
-          on_chroot << EOF
+          on_chroot <<EOF
           cd "/home/${FIRST_USER_NAME}"
           git clone --depth=1 http://git.code.sf.net/p/openocd/code openocd
           cd openocd
@@ -102,7 +102,7 @@ jobs:
           EOF
 
           # Cleanup
-          on_chroot << EOF
+          on_chroot <<EOF
           SUDO_USER="${FIRST_USER_NAME}" apt remove --purge -y build-essential git libtool
           SUDO_USER="${FIRST_USER_NAME}" apt autoremove -y
           SUDO_USER="${FIRST_USER_NAME}" apt-get clean
@@ -114,7 +114,7 @@ jobs:
           EOF
 
           # Create OpenOCD config
-          on_chroot << EOF
+          on_chroot <<EOF
           mkdir -p "/opt/mcuprogrammer"
           cat <<EOC > "/opt/mcuprogrammer/openocd.cfg"
           # OpenOCD interface on RPi v3+
@@ -138,22 +138,22 @@ jobs:
 
           # Create config environment file
           mkdir -p "/opt/mcuprogrammer"
-          on_chroot << EOF
+          on_chroot <<EOF
           cat <<EOC > "/opt/mcuprogrammer/config.env"
           TARGET=rp2040
           EOC
           EOF
 
           # Create OpenOCD service
-          on_chroot << EOF
-          cat <<EOC > "/etc/systemd/system/openocd.service"
+          on_chroot <<'EOF'
+          cat <<'EOC' > "/etc/systemd/system/openocd.service"
           [Unit]
           Description=OpenOCD service
 
           [Service]
           Type=simple
           EnvironmentFile=/opt/mcuprogrammer/config.env
-          ExecStart=openocd -f "/opt/mcuprogrammer/openocd.cfg" -c "transport select swd" -f "target/\${TARGET}.cfg"
+          ExecStart=openocd -f "/opt/mcuprogrammer/openocd.cfg" -c "transport select swd" -f "target/${TARGET}.cfg"
           Restart=always
           RestartSec=5
 
@@ -163,7 +163,7 @@ jobs:
           EOF
 
           # Create debug service
-          on_chroot << EOF
+          on_chroot <<EOF
           cat <<EOC > "/etc/systemd/system/debug.service"
           [Unit]
           Description=Serial debug service
@@ -181,7 +181,7 @@ jobs:
           EOF
 
           # Create CLI service
-          on_chroot << EOF
+          on_chroot <<EOF
           cat <<EOC > "/etc/systemd/system/cli.service"
           [Unit]
           Description=CLI service
@@ -198,14 +198,14 @@ jobs:
           EOF
 
           # Enable services
-          on_chroot << EOF
+          on_chroot <<EOF
           SUDO_USER="${FIRST_USER_NAME}" systemctl enable openocd
           SUDO_USER="${FIRST_USER_NAME}" systemctl enable debug
           SUDO_USER="${FIRST_USER_NAME}" systemctl enable cli
           EOF
 
           # Fix bug with AVAHI IPv6 causing issues (might be an Apple problem though) TODO: Look into this later
-          on_chroot << EOF
+          on_chroot <<EOF
           cat <<EOC > "/etc/avahi/avahi-daemon.conf"
           [server]
           use-ipv4=yes
