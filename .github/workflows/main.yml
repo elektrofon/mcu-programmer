@@ -131,6 +131,7 @@ jobs:
           # SWD
           adapter gpio swclk 25
           adapter gpio swdio 24
+          adapter speed 10000
 
           bindto 0.0.0.0
           EOC
